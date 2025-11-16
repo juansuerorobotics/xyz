@@ -1,3 +1,7 @@
+
+export NCCL_DEBUG=INFO
+export TORCH_DISTRIBUTED_DEBUG=DETAIL
+
 MASTER_ADDR=192.168.1.221   # laptop IP
 MASTER_PORT=12355          # pick any open port
 
