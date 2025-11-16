@@ -7,6 +7,8 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
 from torch.distributed import init_process_group, destroy_process_group
 
+import torch.distributed as dist
+
 class Trainer:
     def __init__(
         self,
@@ -51,8 +53,14 @@ class Trainer:
 
     def train(self, max_epochs: int):
         for epoch in range(max_epochs):
+            # IMPORTANT: shuffle shards differently each epoch
+            if isinstance(self.train_data.sampler, DistributedSampler):
+                self.train_data.sampler.set_epoch(epoch)
+
             self._run_epoch(epoch)
-            if self.gpu_id == 0 and epoch % self.save_every == 0:
+
+            # only rank 0 saves
+            if dist.get_rank() == 0 and epoch % self.save_every == 0:
                 self._save_checkpoint(epoch)
 
 
@@ -64,36 +72,56 @@ def load_train_objs():
 
 
 def prepare_dataloader(dataset: Dataset, batch_size: int):
+    
+    # use global world size & rank
+    world_size = dist.get_world_size()
+    rank = dist.get_rank()
+    
+    sampler = DistributedSampler(
+        dataset,
+        num_replicas=world_size,
+        rank=rank,
+        shuffle=True,
+    )
+    
     return DataLoader(
         dataset,
         batch_size=batch_size,
-        pin_memory=True,
-        shuffle=False,
-        sampler=DistributedSampler(dataset)
+        pin_memory=True, 
+        sampler=sampler
     )
 
 import os
 
-def ddp_setup(rank, world_size):
+def ddp_setup():
     """
     Args:
         rank: Unique identifier of each process
         world_size: Total number of processes
     """
-    os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "12355"
-    torch.cuda.set_device(rank)
-    init_process_group(backend="nccl", rank=rank, world_size=world_size)
+    # os.environ["MASTER_ADDR"] = "localhost"
+    # os.environ["MASTER_PORT"] = "12355"
+    
+    dist.init_process_group(backend="nccl")
+     
+    rank = dist.get_rank()
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    
+    torch.cuda.set_device(local_rank)
+    
+    #init_process_group(backend="nccl", rank=rank, world_size=world_size)
+    return rank, local_rank
+   
     
     
-def main(rank: int, world_size: int,  total_epochs, save_every, batch_size):
+def main(args):
     
-    ddp_setup(rank, world_size)
+    rank, local_rank = ddp_setup()
     
     dataset, model, optimizer = load_train_objs()
-    train_data = prepare_dataloader(dataset, batch_size)
-    trainer = Trainer(model, train_data, optimizer, rank, save_every)
-    trainer.train(total_epochs)
+    train_data = prepare_dataloader(dataset, args.batch_size)
+    trainer = Trainer(model, train_data, optimizer, local_rank, args.save_every)
+    trainer.train(args.total_epochs)
     
     trainer.model.eval()
     
@@ -114,13 +142,13 @@ def main(rank: int, world_size: int,  total_epochs, save_every, batch_size):
         print(f"Test avg loss: {avg_loss:.4f}") 
         
         
-    destroy_process_group()
+    dist.destroy_process_group()
     
 
 if __name__ == "__main__":
     import argparse
     
-    import torch.multiprocessing as mp   
+    #import torch.multiprocessing as mp   
     
     parser = argparse.ArgumentParser(description='simple distributed training job')
     parser.add_argument('total_epochs', type=int, help='Total epochs to train the model')
@@ -128,11 +156,11 @@ if __name__ == "__main__":
     parser.add_argument('--batch_size', default=32, type=int, help='Input batch size on each device (default: 32)')
     args = parser.parse_args()
     
-    world_size = torch.cuda.device_count()
+    #world_size = torch.cuda.device_count()
     
     #device = 0  # shorthand for cuda:0
     #main(world_size, args.total_epochs, args.save_every, args.batch_size)
-    
-    mp.spawn(main, args=(world_size, args.total_epochs, args.save_every, args.batch_size), nprocs=world_size)
+    main(args)
+    #mp.spawn(main, args=(world_size, args.total_epochs, args.save_every, args.batch_size), nprocs=world_size)
     
 
