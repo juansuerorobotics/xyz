@@ -98,32 +98,22 @@ def cleanup_ddp():
     
     
 def setup_ddp():
-    """
-    Args:
-        rank: Unique identifier of each process
-        world_size: Total number of processes
-    """
-    """
-    Initialize DDP using env vars:
-    - MASTER_ADDR
-    - MASTER_PORT
-    - RANK
-    - WORLD_SIZE
-    """
-    rank = int(os.environ["RANK"])
-    world_size = int(os.environ["WORLD_SIZE"])
-    master_addr = os.environ["MASTER_ADDR"]
-    master_port = os.environ["MASTER_PORT"]
 
-
-    # if env vars MASTER_ADDR / MASTER_PORT are already set by torchrun,
-    # you don't even need to pass rank/world_size here, but let's be explicit:
+    print(f"[setup_ddp] RANK={os.environ.get('RANK')} WORLD_SIZE={os.environ.get('WORLD_SIZE')}", flush=True)
+    print(f"[setup_ddp] calling init_process_group()", flush=True)
+    
     dist.init_process_group(
-        backend="gloo",
-        init_method=f"tcp://{master_addr}:{master_port}",
-        rank=rank,
-        world_size=world_size,
+        backend="gloo"
     )
+    
+    print(f"[setup_ddp] init_process_group() returned", flush=True)
+    
+    
+    rank = dist.get_rank()
+    world_size = dist.get_world_size()
+    
+    print(f"[setup_ddp] rank={rank} world_size={world_size}", flush=True)
+     
     return rank, world_size
    
     
