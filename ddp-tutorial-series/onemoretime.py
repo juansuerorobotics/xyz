@@ -98,19 +98,33 @@ def cleanup_ddp():
     
     
 def setup_ddp():
+    
+    rank = int(os.environ["RANK"])
+    world_size = int(os.environ["WORLD_SIZE"])
+    master_addr = os.environ["MASTER_ADDR"]
+    master_port = os.environ["MASTER_PORT"]
+    
+    
     print(
-        f"[setup_ddp] RANK={os.environ.get('RANK')} "
-        f"WORLD_SIZE={os.environ.get('WORLD_SIZE')} "
-        f"MASTER_ADDR={os.environ.get('MASTER_ADDR')} "
-        f"MASTER_PORT={os.environ.get('MASTER_PORT')}",
+        f"[ddp_min] starting on host={socket.gethostname()} "
+        f"rank={rank}/{world_size} "
+        f"MASTER={master_addr}:{master_port}",
         flush=True,
     )
-    print(f"[setup_ddp] calling init_process_group()", flush=True)
 
-    # IMPORTANT: no init_method, no manual tcp://
-    dist.init_process_group(backend="gloo")  # or "nccl" if you want GPU-DDP later
+    print(f"[ddp_min] rank={rank} calling init_process_group()", flush=True)
+    dist.init_process_group(
+        backend="gloo",
+        init_method=f"tcp://{master_addr}:{master_port}",
+        rank=rank,
+        world_size=world_size,
+    )
 
-    print(f"[setup_ddp] init_process_group() returned", flush=True)
+    print(f"[ddp_min] rank={rank} init_process_group() returned", flush=True)
+
+    # simple sync to prove everything works
+    dist.barrier()
+    print(f"[ddp_min] rank={rank} passed barrier()", flush=True)
 
     rank = dist.get_rank()
     world_size = dist.get_world_size()
