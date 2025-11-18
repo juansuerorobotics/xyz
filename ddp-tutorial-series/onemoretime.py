@@ -98,35 +98,35 @@ def cleanup_ddp():
     
     
 def setup_ddp():
-
-    print(f"[setup_ddp] RANK={os.environ.get('RANK')} WORLD_SIZE={os.environ.get('WORLD_SIZE')}", flush=True)
-    print(f"[setup_ddp] calling init_process_group()", flush=True)
-    
-    dist.init_process_group(
-        backend="gloo"
+    print(
+        f"[setup_ddp] RANK={os.environ.get('RANK')} "
+        f"WORLD_SIZE={os.environ.get('WORLD_SIZE')} "
+        f"MASTER_ADDR={os.environ.get('MASTER_ADDR')} "
+        f"MASTER_PORT={os.environ.get('MASTER_PORT')}",
+        flush=True,
     )
-    
+    print(f"[setup_ddp] calling init_process_group()", flush=True)
+
+    # IMPORTANT: no init_method, no manual tcp://
+    dist.init_process_group(backend="gloo")  # or "nccl" if you want GPU-DDP later
+
     print(f"[setup_ddp] init_process_group() returned", flush=True)
-    
-    
+
     rank = dist.get_rank()
     world_size = dist.get_world_size()
-    
     print(f"[setup_ddp] rank={rank} world_size={world_size}", flush=True)
-     
+
     return rank, world_size
-   
-    
-    
+
 def main(args):
-    
     rank, world_size = setup_ddp()
 
-
-        
-    local_rank = int(os.environ.get("LOCAL_RANK", "0"))  # we'll set this ourselves
+    local_rank = int(os.environ.get("LOCAL_RANK", "0"))
     gpu_id = local_rank
-    print(f"[Rank {rank}] Starting on {socket.gethostname()} using GPU {gpu_id}")
+    print(f"[Rank {rank}] Starting on {socket.gethostname()} using GPU {gpu_id}", flush=True)
+
+
+
     dataset, model, optimizer = load_train_objs()
     train_data = prepare_dataloader(dataset, args.batch_size)
     trainer = Trainer(model, train_data, optimizer, gpu_id, args.save_every)
