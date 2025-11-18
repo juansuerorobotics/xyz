@@ -32,7 +32,8 @@ class Trainer:
     def _run_batch(self, source, targets):
         self.optimizer.zero_grad()
         output = self.model(source)
-        loss = F.cross_entropy(output, targets)
+        #loss = F.cross_entropy(output, targets)
+        loss = F.mse_loss(output, targets)
         loss.backward()
         self.optimizer.step()
 
@@ -92,59 +93,74 @@ def prepare_dataloader(dataset: Dataset, batch_size: int):
     )
 
 import os
-
-def ddp_setup():
+def cleanup_ddp():
+    dist.destroy_process_group()
+    
+    
+def setup_ddp():
     """
     Args:
         rank: Unique identifier of each process
         world_size: Total number of processes
     """
-    # os.environ["MASTER_ADDR"] = "localhost"
-    # os.environ["MASTER_PORT"] = "12355"
-    
-    dist.init_process_group(backend="nccl")
-     
-    rank = dist.get_rank()
-    local_rank = int(os.environ.get("LOCAL_RANK", 0))
-    
-    torch.cuda.set_device(local_rank)
-    
-    #init_process_group(backend="nccl", rank=rank, world_size=world_size)
-    return rank, local_rank
+
+    # torchrun sets these
+    rank = int(os.environ["RANK"])
+    world_size = int(os.environ["WORLD_SIZE"])
+
+    # if env vars MASTER_ADDR / MASTER_PORT are already set by torchrun,
+    # you don't even need to pass rank/world_size here, but let's be explicit:
+    dist.init_process_group(
+        backend="gloo",
+        rank=rank,
+        world_size=world_size,
+    )
+    return rank, world_size
    
     
     
 def main(args):
     
-    rank, local_rank = ddp_setup()
-    
+    rank, world_size = setup_ddp()
+
+
+        
+    local_rank = int(os.environ["LOCAL_RANK"])
+    gpu_id = local_rank
+    print(f"[Rank {rank}] Starting on {socket.gethostname()} using GPU {gpu_id}")
     dataset, model, optimizer = load_train_objs()
     train_data = prepare_dataloader(dataset, args.batch_size)
-    trainer = Trainer(model, train_data, optimizer, local_rank, args.save_every)
+    trainer = Trainer(model, train_data, optimizer, gpu_id, args.save_every)
     trainer.train(args.total_epochs)
     
-    trainer.model.eval()
-    
-    
-    with torch.no_grad():  # no gradients while testing
+    # ----------------------------------
+    # Evaluation (Rank 0 only)
+    # ----------------------------------
+    if dist.get_rank() == 0:
+        trainer.model.eval()
         
-        total_loss = 0
-        steps = 0
-        for source, targets in trainer.train_data:
-            source = source.to(trainer.gpu_id)    # [batch_size, 20]
-            targets = targets.to(trainer.gpu_id)  # [batch_size]
-            output = trainer.model(source)        # [batch_size, 1] in your case
+        
+        with torch.no_grad():  # no gradients while testing
             
-            loss = F.cross_entropy(output, targets)
-            total_loss += loss.item()
-            steps += 1   
-        avg_loss = total_loss / steps
-        print(f"Test avg loss: {avg_loss:.4f}") 
+            total_loss = 0
+            steps = 0
+            for source, targets in trainer.train_data:
+                source = source.to(trainer.gpu_id)    # [batch_size, 20]
+                targets = targets.to(trainer.gpu_id)  # [batch_size]
+                output = trainer.model(source)        # [batch_size, 1] in your case
+                
+                #loss = F.cross_entropy(output, targets)
+                loss = F.mse_loss(output, targets)
+                
+                total_loss += loss.item()
+                steps += 1   
+            avg_loss = total_loss / steps
+            print(f"Test avg loss: {avg_loss:.4f}") 
         
         
-    dist.destroy_process_group()
+    cleanup_ddp()
     
-
+import socket
 if __name__ == "__main__":
     import argparse
     
@@ -154,13 +170,7 @@ if __name__ == "__main__":
     parser.add_argument('total_epochs', type=int, help='Total epochs to train the model')
     parser.add_argument('save_every', type=int, help='How often to save a snapshot')
     parser.add_argument('--batch_size', default=32, type=int, help='Input batch size on each device (default: 32)')
+    
     args = parser.parse_args()
-    
-    #world_size = torch.cuda.device_count()
-    
-    #device = 0  # shorthand for cuda:0
-    #main(world_size, args.total_epochs, args.save_every, args.batch_size)
     main(args)
-    #mp.spawn(main, args=(world_size, args.total_epochs, args.save_every, args.batch_size), nprocs=world_size)
-    
 
