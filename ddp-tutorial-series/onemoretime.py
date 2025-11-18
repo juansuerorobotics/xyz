@@ -103,15 +103,24 @@ def setup_ddp():
         rank: Unique identifier of each process
         world_size: Total number of processes
     """
-
-    # torchrun sets these
+    """
+    Initialize DDP using env vars:
+    - MASTER_ADDR
+    - MASTER_PORT
+    - RANK
+    - WORLD_SIZE
+    """
     rank = int(os.environ["RANK"])
     world_size = int(os.environ["WORLD_SIZE"])
+    master_addr = os.environ["MASTER_ADDR"]
+    master_port = os.environ["MASTER_PORT"]
+
 
     # if env vars MASTER_ADDR / MASTER_PORT are already set by torchrun,
     # you don't even need to pass rank/world_size here, but let's be explicit:
     dist.init_process_group(
         backend="gloo",
+        init_method=f"tcp://{master_addr}:{master_port}",
         rank=rank,
         world_size=world_size,
     )
@@ -125,7 +134,7 @@ def main(args):
 
 
         
-    local_rank = int(os.environ["LOCAL_RANK"])
+    local_rank = int(os.environ.get("LOCAL_RANK", "0"))  # we'll set this ourselves
     gpu_id = local_rank
     print(f"[Rank {rank}] Starting on {socket.gethostname()} using GPU {gpu_id}")
     dataset, model, optimizer = load_train_objs()
