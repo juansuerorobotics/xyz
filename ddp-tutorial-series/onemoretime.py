@@ -8,6 +8,7 @@ from torch.utils.data.distributed import DistributedSampler
 from torch.distributed import init_process_group, destroy_process_group
 
 import torch.distributed as dist
+import torch.onnx
 
 class Trainer:
     def __init__(
@@ -169,6 +170,29 @@ def main(args):
                 steps += 1   
             avg_loss = total_loss / steps
             print(f"Test avg loss: {avg_loss:.4f}") 
+
+        
+        print("sds")
+        
+        model_for_export = trainer.model.module.eval().cuda()
+        
+        dummy_input = torch.randn(1,20, dtype=torch.float32, device="cuda")
+        
+        onnx_path = "model.onnx"
+        torch.onnx.export(
+            model_for_export,
+            dummy_input,
+            onnx_path,
+            input_names=["input"],
+            output_names=["output"],
+            dynamic_axes={
+                "input": {0: "batch_size"},
+                "output": {0: "batch_size"},
+            },
+            opset_version=17,  # or 16/18 depending on your stack
+        )
+        print(f"Exported ONNX model to {onnx_path}")
+        
         
         
     cleanup_ddp()
