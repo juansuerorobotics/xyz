@@ -31,7 +31,7 @@ class ControlledDataset(Dataset):
             # compute scalar y using our controlled rule
             y = (self.W_true * x).sum() + self.b_true
             # optional noise
-            y = y + 0.01 * torch.randn(())
+            #y = y + 0.01 * torch.randn(())
             # store as (20,) and (1,)
             self.data.append((x, y.unsqueeze(0)))
 
