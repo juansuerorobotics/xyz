@@ -19,11 +19,11 @@ class ControlledDataset(Dataset):
     def __init__(self, size: int):
         self.size = size
 
-        # True underlying rule: only feature 0 and 5 matter
+        # Strong, obvious rule:
         self.W_true = torch.zeros(20)
-        self.W_true[0] = 2.0   # brightness
-        self.W_true[5] = -1.0  # speed
-        self.b_true = 0.5
+        self.W_true[0] = 10.0   # feature 0: big positive
+        self.W_true[5] = -5.0   # feature 5: big negative
+        self.b_true = 2.0
 
         self.data = []
         for _ in range(size):
