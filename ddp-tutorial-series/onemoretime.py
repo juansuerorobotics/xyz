@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
-from datautils import MyTrainDataset
+from datautils import MyTrainDataset, ControlledDataset
 
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
@@ -67,7 +67,9 @@ class Trainer:
 
 
 def load_train_objs():
-    train_set = MyTrainDataset(2048)  # load your dataset
+    #train_set = MyTrainDataset(10000)  # load your dataset
+    train_set = ControlledDataset(10000)  # load your dataset
+    
     model = torch.nn.Linear(20, 1)  # load your model
     optimizer = torch.optim.SGD(model.parameters(), lr=1e-3)
     return train_set, model, optimizer
@@ -147,6 +149,11 @@ def main(args):
     trainer = Trainer(model, train_data, optimizer, gpu_id, args.save_every)
     trainer.train(args.total_epochs)
     
+    print("=========================================")
+    print(trainer.model.module.weight)  # should show something near [2.0, 0, 0, 0, 0, -1.0, ...]
+    print(trainer.model.module.bias)  
+    print("=========================================")
+
     # ----------------------------------
     # Evaluation (Rank 0 only)
     # ----------------------------------
